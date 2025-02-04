@@ -72,7 +72,7 @@ module.exports = {
     }),
     new HtmlWebpackPlugin({
       template: path.resolve('public/popup.html'),
-      filename: 'popup.html',
+      filename: 'public/popup.html',
       chunks: ['popup'],
     }),
     new HtmlWebpackPlugin({

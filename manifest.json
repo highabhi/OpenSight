@@ -14,11 +14,11 @@
         "scripts": ["background.js"]
     },
     "action": {
-      "default_popup": "popup.html",
+      "default_popup": "public/popup.html",
       "default_icon": {
-        "16": "icon.png",
-        "48": "icon.png",
-        "128": "icon.png"
+        "16": "assets/icon.png",
+        "48": "assets/icon.png",
+        "128": "assets/icon.png"
       }
     },
     "content_scripts": [
@@ -32,8 +32,8 @@
       "open_in_tab": true
     },
     "icons": {
-      "16": "icon.png",
-      "48": "icon.png",
-      "128": "icon.png"
+      "16": "assets/icon.png",
+      "48": "assets/icon.png",
+      "128": "assets/icon.png"
     }
   }
