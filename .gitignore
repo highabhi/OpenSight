@@ -1,0 +1,34 @@
+# Node.js
+node_modules/
+npm-debug.log
+package-lock.json
+
+# Tailwind 
+/dist/
+*.css.map
+
+# VS Code settings
+.vscode/
+
+# OS-specific files
+.DS_Store            # macOS
+Thumbs.db            # Windows
+
+# Log files
+*.log
+
+# Build output
+/public/*
+!/public/icon.png   
+
+# Environment files
+.env
+
+# Webpack or other bundlers' output (if applicable)
+/build/
+/dist/
+/bundle/
+
+# Temporary files
+*.bak
+*.swp
