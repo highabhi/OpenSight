@@ -9,6 +9,9 @@ interface RequestData {
   trackers: string[];
   method: string;
   status?: number;
+  contentType?: string;
+  contentLength?: number;
+  direction: 'upload' | 'download';
 }
 
 class NetworkRequestManager {
@@ -23,11 +26,14 @@ class NetworkRequestManager {
     'analytics',
     'tracker',
     'pixel',
+    'adserver',
+    'tracking',
+    'metrics',
   ];
 
   private constructor() {
     this.initializeListeners();
-    this.loadStoredRequests();
+    void this.loadStoredRequests();
   }
 
   static getInstance(): NetworkRequestManager {
@@ -40,6 +46,7 @@ class NetworkRequestManager {
   private async loadStoredRequests(): Promise<void> {
     try {
       const data = await browser.storage.local.get('networkRequests');
+      // this.networkRequests = data.networkRequests || [];
       this.networkRequests = Array.isArray(data.networkRequests) ? data.networkRequests : [];
     } catch (error) {
       console.error('Failed to load stored requests:', error);
@@ -59,6 +66,12 @@ class NetworkRequestManager {
     return this.trackerDomains.filter(tracker => url.toLowerCase().includes(tracker));
   }
 
+  private determineDirection(details: WebRequest.OnBeforeRequestDetailsType): 'upload' | 'download' {
+    return (details.method === 'POST' || details.method === 'PUT' || details.requestBody) 
+      ? 'upload' 
+      : 'download';
+  }
+
   private async storeRequest(request: RequestData): Promise<void> {
     this.networkRequests.unshift(request);
     
@@ -72,24 +85,27 @@ class NetworkRequestManager {
   private initializeListeners(): void {
     // Listen for web requests
     browser.webRequest.onBeforeRequest.addListener(
-      async (details: WebRequest.OnBeforeRequestDetailsType) => {
-        try {
-          const cookies = await browser.cookies.getAll({ url: details.url });
-          
-          const request: RequestData = {
-            id: crypto.randomUUID(),
-            url: details.url,
-            timestamp: Date.now(),
-            type: details.type,
-            cookies: cookies.map(cookie => cookie.name),
-            trackers: this.containsTracker(details.url),
-            method: details.method || 'GET',
-          };
-      
-          await this.storeRequest(request);
-        } catch (error) {
-          console.error('Error processing request:', error);
-        }
+      (details: WebRequest.OnBeforeRequestDetailsType) => {
+        void (async () => {
+          try {
+            const cookies = await browser.cookies.getAll({ url: details.url });
+            
+            const request: RequestData = {
+              id: crypto.randomUUID(),
+              url: details.url,
+              timestamp: Date.now(),
+              type: details.type,
+              cookies: cookies.map(cookie => cookie.name),
+              trackers: this.containsTracker(details.url),
+              method: details.method || 'GET',
+              direction: this.determineDirection(details),
+            };
+        
+            await this.storeRequest(request);
+          } catch (error) {
+            console.error('Error processing request:', error);
+          }
+        })();
         return { cancel: false };
       },
       { urls: ["<all_urls>"] },
@@ -97,38 +113,55 @@ class NetworkRequestManager {
     );
 
     // Listen for completed requests
-    browser.webRequest.onCompleted.addListener(
-      async (details: WebRequest.OnCompletedDetailsType) => {
-        try {
-          const requestIndex = this.networkRequests.findIndex(r => r.url === details.url);
-          if (requestIndex !== -1) {
-            this.networkRequests[requestIndex].status = details.statusCode;
-            await this.saveRequests();
+    browser.webRequest.onHeadersReceived.addListener(
+      (details: WebRequest.OnHeadersReceivedDetailsType) => {
+        void (async () => {
+          try {
+            const requestIndex = this.networkRequests.findIndex(r => r.url === details.url);
+            if (requestIndex !== -1) {
+              const contentTypeHeader = details.responseHeaders?.find(
+                h => h.name.toLowerCase() === 'content-type'
+              );
+              const contentLengthHeader = details.responseHeaders?.find(
+                h => h.name.toLowerCase() === 'content-length'
+              );
+
+              if (contentTypeHeader?.value) {
+                this.networkRequests[requestIndex].contentType = contentTypeHeader.value;
+              }
+              
+              if (contentLengthHeader?.value) {
+                this.networkRequests[requestIndex].contentLength = parseInt(contentLengthHeader.value, 10);
+              }
+              
+              this.networkRequests[requestIndex].status = details.statusCode;
+              
+              await this.saveRequests();
+            }
+          } catch (error) {
+            console.error('Error updating request headers:', error);
           }
-        } catch (error) {
-          console.error('Error updating request status:', error);
-        }
+        })();
+        return { cancel: false };
       },
-      { urls: ["<all_urls>"] }
+      { urls: ["<all_urls>"] },
+      ["responseHeaders"]
     );
 
+    // Handle messages from popup
     browser.runtime.onMessage.addListener(
-      (message: any, sender: any, sendResponse: any) => {
-        if (message?.type === 'GET_NETWORK_REQUESTS') {
-          // Immediately send response with current requests
-          sendResponse({ success: true, data: this.networkRequests });
+      (message: unknown, _sender: unknown, sendResponse: (response: any) => void) => {
+        if (typeof message === 'object' && message !== null && 'type' in message) {
+          const typedMessage = message as { type: string };
+          if (typedMessage.type === 'GET_NETWORK_REQUESTS') {
+            sendResponse({ success: true, data: this.networkRequests });
+          }
         }
-        return true; // Keep the message channel open for async response
+        return true;
       }
     );
   }
-
-  public getRequests(): RequestData[] {
-    return this.networkRequests;
-  }
 }
 
-
 const manager = NetworkRequestManager.getInstance();
-
 export default manager;

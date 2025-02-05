@@ -1,5 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/Tabs";
+import { Alert, AlertTitle, AlertDescription } from "./ui/Alert";
+import { BarChart, Activity, Shield, Cookie, Download, AlertTriangle } from "lucide-react";
 import browser from 'webextension-polyfill';
+
 
 interface RequestData {
   id: string;
@@ -10,30 +14,33 @@ interface RequestData {
   trackers: string[];
   method: string;
   status?: number;
+  contentType?: string;
+  contentLength?: number;
+  direction: 'upload' | 'download';
+}
+
+interface TrackerAnalysis {
+  type: 'data-collection' | 'analytics' | 'advertising' | 'social' | 'unknown';
+  risk: 'high' | 'medium' | 'low';
+  description: string;
 }
 
 const NetworkMonitor: React.FC = () => {
   const [requests, setRequests] = useState<RequestData[]>([]);
-  const [filter, setFilter] = useState<string>('all');
-  const [searchTerm, setSearchTerm] = useState<string>('');
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState('overview');
+  const [totalBandwidth, setTotalBandwidth] = useState({ up: 0, down: 0 });
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const fetchRequests = async () => {
       try {
-        setIsLoading(true);
         const response: { success: boolean; data: RequestData[] } = await browser.runtime.sendMessage({ type: 'GET_NETWORK_REQUESTS' });
-
-        if (response.success && Array.isArray(response.data)) {
+        if (response?.success && Array.isArray(response.data)) {
           setRequests(response.data);
-          setError(null);
-        } else {
-          throw new Error('Invalid response format');
+          calculateBandwidth(response.data);
         }
-      } catch (err) {
-        setError('Failed to fetch network requests. Please check if the extension has proper permissions.');
-        console.error('Error fetching requests:', err);
+      } catch (error) {
+        console.error('Failed to fetch requests:', error);
       } finally {
         setIsLoading(false);
       }
@@ -41,127 +48,197 @@ const NetworkMonitor: React.FC = () => {
 
     fetchRequests();
     const interval = setInterval(fetchRequests, 1000);
-    
-    return () => {
-      clearInterval(interval);
-    };
+    return () => clearInterval(interval);
   }, []);
 
-  const filteredRequests = requests.filter(request => {
-    const matchesSearch = request.url.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesFilter = filter === 'all' 
-      || (filter === 'trackers' && request.trackers.length > 0)
-      || (filter === 'cookies' && request.cookies.length > 0);
+  const calculateBandwidth = (data: RequestData[]) => {
+    const bandwidth = data.reduce((acc, req) => ({
+      up: acc.up + (req.direction === 'upload' ? (req.contentLength || 0) : 0),
+      down: acc.down + (req.direction === 'download' ? (req.contentLength || 0) : 0)
+    }), { up: 0, down: 0 });
     
-    return matchesSearch && matchesFilter;
-  });
+    setTotalBandwidth(bandwidth);
+  };
 
-  if (isLoading && requests.length === 0) {
-    return (
-      <div className="w-full h-full flex items-center justify-center">
-        <div className="text-gray-600">Loading network requests...</div>
-      </div>
-    );
-  }
+  const analyzeTracker = (tracker: string): TrackerAnalysis => {
+    // This would contain logic to analyze tracker behavior
+    if (tracker.includes('analytics')) {
+      return {
+        type: 'analytics',
+        risk: 'medium',
+        description: 'Collects user behavior data for analytics purposes'
+      };
+    }
+    // Add more analysis logic here
+    return {
+      type: 'unknown',
+      risk: 'low',
+      description: 'Unknown tracker type'
+    };
+  };
 
-  if (error) {
-    return (
-      <div className="w-full h-full p-4">
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative">
-          <strong className="font-bold">Error: </strong>
-          <span className="block sm:inline">{error}</span>
-        </div>
-      </div>
-    );
-  }
+  const formatBytes = (bytes: number): string => {
+    if (bytes === 0) return '0 B';
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
+  };
+
   return (
-    <div className="w-[600px] h-[400px] p-4 bg-white">
-      {/* Header */}
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-xl font-bold text-gray-800">Network Monitor</h1>
-        <div className="flex gap-2">
-          <select 
-            className="px-2 py-1 border rounded"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-          >
-            <option value="all">All Requests</option>
-            <option value="trackers">Trackers Only</option>
-            <option value="cookies">With Cookies</option>
-          </select>
-          <input
-            type="text"
-            placeholder="Search URLs..."
-            className="px-2 py-1 border rounded"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+    <div className="w-full h-full bg-white">
+      {/* Stats Banner */}
+      <div className="bg-gray-900 text-white p-4">
+        <div className="grid grid-cols-4 gap-4">
+          <div className="flex items-center space-x-2">
+            <Activity className="w-5 h-5" />
+            <div>
+              <div className="text-sm opacity-75">Total Requests</div>
+              <div className="text-lg font-bold">{requests.length}</div>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Download className="w-5 h-5" />
+            <div>
+              <div className="text-sm opacity-75">Bandwidth</div>
+              <div className="text-lg font-bold">↓{formatBytes(totalBandwidth.down)} ↑{formatBytes(totalBandwidth.up)}</div>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Shield className="w-5 h-5 text-red-400" />
+            <div>
+              <div className="text-sm opacity-75">Active Trackers</div>
+              <div className="text-lg font-bold">{requests.filter(r => r.trackers.length > 0).length}</div>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Cookie className="w-5 h-5 text-yellow-400" />
+            <div>
+              <div className="text-sm opacity-75">Cookies</div>
+              <div className="text-lg font-bold">{requests.filter(r => r.cookies.length > 0).length}</div>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 mb-4">
-        <div className="bg-blue-100 p-3 rounded">
-          <p className="text-sm text-blue-800">Total Requests</p>
-          <p className="text-2xl font-bold text-blue-900">{requests.length}</p>
-        </div>
-        <div className="bg-red-100 p-3 rounded">
-          <p className="text-sm text-red-800">Trackers Detected</p>
-          <p className="text-2xl font-bold text-red-900">
-            {requests.filter(r => r.trackers.length > 0).length}
-          </p>
-        </div>
-        <div className="bg-green-100 p-3 rounded">
-          <p className="text-sm text-green-800">Cookies Found</p>
-          <p className="text-2xl font-bold text-green-900">
-            {requests.filter(r => r.cookies.length > 0).length}
-          </p>
-        </div>
-      </div>
+      {/* Main Content */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="p-4">
+        <TabsList>
+          <TabsTrigger value="overview">
+            <BarChart className="w-4 h-4 mr-2" />
+            Overview
+          </TabsTrigger>
+          <TabsTrigger value="trackers">
+            <Shield className="w-4 h-4 mr-2" />
+            Trackers
+          </TabsTrigger>
+          <TabsTrigger value="cookies">
+            <Cookie className="w-4 h-4 mr-2" />
+            Cookies
+          </TabsTrigger>
+          <TabsTrigger value="downloads">
+            <Download className="w-4 h-4 mr-2" />
+            Downloads
+          </TabsTrigger>
+        </TabsList>
 
-      {/* Request List */}
-      <div className="overflow-y-auto h-[280px] border rounded">
-        {isLoading && requests.length === 0 ? (
-          <div className="p-4 text-center text-gray-500">Loading...</div>
-        ) : filteredRequests.length === 0 ? (
-          <div className="p-4 text-center text-gray-500">No requests found</div>
-        ) : (
-          filteredRequests.map((request) => (
-            <div 
-              key={request.id} 
-              className="p-2 border-b hover:bg-gray-50"
-            >
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <p className="text-sm text-gray-800 truncate">{request.url}</p>
-                  <div className="flex gap-2 mt-1">
-                    <span className="text-xs bg-gray-200 px-2 py-1 rounded">
-                      {request.method}
-                    </span>
-                    {request.status && (
-                      <span className={`text-xs px-2 py-1 rounded ${
-                        request.status < 400 ? 'bg-green-200' : 'bg-red-200'
-                      }`}>
-                        {request.status}
-                      </span>
-                    )}
-                    {request.trackers.length > 0 && (
-                      <span className="text-xs bg-red-200 px-2 py-1 rounded">
-                        {request.trackers.length} Trackers
-                      </span>
-                    )}
-                    {request.cookies.length > 0 && (
-                      <span className="text-xs bg-yellow-200 px-2 py-1 rounded">
-                        {request.cookies.length} Cookies
-                      </span>
-                    )}
+        <TabsContent value="overview" className="space-y-4">
+          <div className="grid grid-cols-1 gap-4">
+            {requests.map(request => (
+              <div key={request.id} className="border rounded-lg p-3 hover:bg-gray-50">
+                <div className="flex justify-between items-start">
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-gray-900 truncate">{request.url}</p>
+                    <div className="flex gap-2 mt-1">
+                      <span className="text-xs bg-gray-200 px-2 py-1 rounded">{request.method}</span>
+                      {request.status && (
+                        <span className={`text-xs px-2 py-1 rounded ${
+                          request.status < 400 ? 'bg-green-200' : 'bg-red-200'
+                        }`}>
+                          {request.status}
+                        </span>
+                      )}
+                      {request.contentLength && (
+                        <span className="text-xs bg-blue-200 px-2 py-1 rounded">
+                          {formatBytes(request.contentLength)}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
+            ))}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="trackers" className="space-y-4">
+          {requests.filter(r => r.trackers.length > 0).map(request => (
+            <div key={request.id} className="border rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-medium">{request.url}</h3>
+                <span className="text-xs bg-red-200 px-2 py-1 rounded">
+                  {request.trackers.length} Trackers
+                </span>
+              </div>
+              
+              <div className="mt-3 space-y-2">
+                {request.trackers.map((tracker, idx) => {
+                  const analysis = analyzeTracker(tracker);
+                  return (
+                    <Alert key={idx} variant={analysis.risk === 'high' ? 'destructive' : 'default'}>
+                      <AlertTriangle className="w-4 h-4" />
+                      <AlertTitle className="text-sm">
+                        {tracker} ({analysis.type})
+                      </AlertTitle>
+                      <AlertDescription className="text-xs mt-1">
+                        {analysis.description}
+                      </AlertDescription>
+                    </Alert>
+                  );
+                })}
+              </div>
             </div>
-          ))
-        )}
-      </div>
+          ))}
+        </TabsContent>
+
+        <TabsContent value="cookies" className="space-y-4">
+          {requests.filter(r => r.cookies.length > 0).map(request => (
+            <div key={request.id} className="border rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-medium">{request.url}</h3>
+                <span className="text-xs bg-yellow-200 px-2 py-1 rounded">
+                  {request.cookies.length} Cookies
+                </span>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {request.cookies.map((cookie, idx) => (
+                  <div key={idx} className="text-xs bg-gray-100 p-2 rounded">
+                    {cookie}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </TabsContent>
+
+        <TabsContent value="downloads" className="space-y-4">
+          {requests
+            .filter(r => r.direction === 'download' && r.contentLength)
+            .map(request => (
+              <div key={request.id} className="border rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium truncate">{request.url}</h3>
+                  <span className="text-xs bg-blue-200 px-2 py-1 rounded">
+                    {formatBytes(request.contentLength || 0)}
+                  </span>
+                </div>
+                <div className="mt-2 text-xs text-gray-600">
+                  <p>Type: {request.contentType || 'Unknown'}</p>
+                  <p>Status: {request.status || 'Pending'}</p>
+                </div>
+              </div>
+            ))}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };

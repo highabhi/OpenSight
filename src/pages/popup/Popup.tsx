@@ -1,5 +1,6 @@
 import React from 'react';
 import NetworkMonitor from '../../components/NetworkMonitor';
+import '../../styles/global.css'
 
 const Popup: React.FC = () => {
   return (
