@@ -50,8 +50,7 @@ module.exports = {
       },
       {
         test: /\.(png|jpg|jpeg|gif|woff|woff2|ttf|eot)$/,
-        type: 'asset/resource', 
-        include: path.resolve(__dirname, 'src/assets') 
+        type: 'asset/resource',
       },
     ],
   },
@@ -62,18 +61,18 @@ module.exports = {
     new CopyWebpackPlugin({
       patterns: [
         {
-          from: path.resolve(__dirname, 'public/popup.html'),
-          to: path.resolve(__dirname, 'dist/popup.html'),
+          from: path.resolve('src/assets'),
+          to: path.resolve('dist'),
         },
         {
           from: 'manifest.json',
-          to: path.resolve(__dirname, 'dist'),
+          to: path.resolve('dist'),
         },
       ],
     }),
     new HtmlWebpackPlugin({
       template: path.resolve('public/popup.html'),
-      filename: 'public/popup.html',
+      filename: 'popup.html',
       chunks: ['popup'],
     }),
     new HtmlWebpackPlugin({
