@@ -11,10 +11,6 @@ interface RequestData {
   status?: number;
 }
 
-interface StorageData {
-  networkRequests: RequestData[];
-}
-
 class NetworkRequestManager {
   private static instance: NetworkRequestManager;
   private networkRequests: RequestData[] = [];
@@ -41,17 +37,10 @@ class NetworkRequestManager {
     return NetworkRequestManager.instance;
   }
 
-private async loadStoredRequests(): Promise<void> {
+  private async loadStoredRequests(): Promise<void> {
     try {
       const data = await browser.storage.local.get('networkRequests');
-  
-      // 'data' is of the expected type and contains the 'networkRequests' property
-      if (data && typeof data === 'object' && 'networkRequests' in data) {
-        // Type assertion after confirming structure
-        this.networkRequests = (data as { networkRequests: RequestData[] }).networkRequests || [];
-      } else {
-        this.networkRequests = [];
-      }
+      this.networkRequests = Array.isArray(data.networkRequests) ? data.networkRequests : [];
     } catch (error) {
       console.error('Failed to load stored requests:', error);
       this.networkRequests = [];
@@ -123,16 +112,15 @@ private async loadStoredRequests(): Promise<void> {
       { urls: ["<all_urls>"] }
     );
 
-    // Handle messages from popup
     browser.runtime.onMessage.addListener(
-        (message: unknown, sender, sendResponse) => {
-          if (typeof message === 'object' && message !== null && 'type' in message && (message as { type: string }).type === 'GET_NETWORK_REQUESTS') {
-            //handle the message type properly before sending the response
-            sendResponse(this.networkRequests);
-          }
-          return true; // Keep the message channel open for async response
+      (message: any, sender: any, sendResponse: any) => {
+        if (message?.type === 'GET_NETWORK_REQUESTS') {
+          // Immediately send response with current requests
+          sendResponse({ success: true, data: this.networkRequests });
         }
-      );
+        return true; // Keep the message channel open for async response
+      }
+    );
   }
 
   public getRequests(): RequestData[] {
@@ -140,7 +128,7 @@ private async loadStoredRequests(): Promise<void> {
   }
 }
 
-// Initialize the manager
+
 const manager = NetworkRequestManager.getInstance();
 
 export default manager;

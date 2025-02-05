@@ -23,11 +23,16 @@ const NetworkMonitor: React.FC = () => {
     const fetchRequests = async () => {
       try {
         setIsLoading(true);
-        const result = await browser.runtime.sendMessage({ type: 'GET_NETWORK_REQUESTS' });
-        setRequests(Array.isArray(result) ? result : []);
-        setError(null);
+        const response: { success: boolean; data: RequestData[] } = await browser.runtime.sendMessage({ type: 'GET_NETWORK_REQUESTS' });
+
+        if (response.success && Array.isArray(response.data)) {
+          setRequests(response.data);
+          setError(null);
+        } else {
+          throw new Error('Invalid response format');
+        }
       } catch (err) {
-        setError('Failed to fetch network requests');
+        setError('Failed to fetch network requests. Please check if the extension has proper permissions.');
         console.error('Error fetching requests:', err);
       } finally {
         setIsLoading(false);
@@ -51,14 +56,24 @@ const NetworkMonitor: React.FC = () => {
     return matchesSearch && matchesFilter;
   });
 
-  if (error) {
+  if (isLoading && requests.length === 0) {
     return (
-      <div className="w-[600px] h-[400px] p-4 bg-white">
-        <div className="text-red-500">Error: {error}</div>
+      <div className="w-full h-full flex items-center justify-center">
+        <div className="text-gray-600">Loading network requests...</div>
       </div>
     );
   }
 
+  if (error) {
+    return (
+      <div className="w-full h-full p-4">
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative">
+          <strong className="font-bold">Error: </strong>
+          <span className="block sm:inline">{error}</span>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="w-[600px] h-[400px] p-4 bg-white">
       {/* Header */}

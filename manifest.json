@@ -5,7 +5,10 @@
     "description": "OpenSight Dev",
     "permissions": [
       "tabs",
-      "activeTab"
+      "activeTab",
+      "webRequest",
+      "storage",
+      "cookies"
     ],
     "host_permissions": [
      "<all_urls>"
