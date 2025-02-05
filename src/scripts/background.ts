@@ -12,7 +12,10 @@ interface RequestData {
   contentType?: string;
   contentLength?: number;
   direction: 'upload' | 'download';
+  downloadType?: 'file' | 'media' | 'script' | 'stylesheet' | 'font' | 'other';
 }
+
+
 
 class NetworkRequestManager {
   private static instance: NetworkRequestManager;
@@ -36,6 +39,66 @@ class NetworkRequestManager {
     void this.loadStoredRequests();
   }
 
+  private readonly FILE_MIME_TYPES = [
+    'application/octet-stream',
+    'application/pdf',
+    'application/zip',
+    'application/x-rar-compressed',
+    'application/x-tar',
+    'application/x-gzip',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-powerpoint'
+  ];
+
+  private readonly FILE_EXTENSIONS = [
+    '.exe', '.dmg', '.deb', '.rpm', '.zip', '.tar.gz', '.rar', 
+    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'
+  ];
+
+  private determineDownloadType(details: WebRequest.OnHeadersReceivedDetailsType): 'file' | 'media' | 'script' | 'stylesheet' | 'font' | 'other' {
+    const contentTypeHeader = details.responseHeaders?.find(
+      h => h.name.toLowerCase() === 'content-type'
+    );
+    const contentDisposition = details.responseHeaders?.find(
+      h => h.name.toLowerCase() === 'content-disposition'
+    );
+
+    // Check for explicit file downloads
+    if (contentDisposition?.value?.includes('attachment')) {
+      return 'file';
+    }
+
+    const mimeType = contentTypeHeader?.value?.split(';')[0].trim().toLowerCase();
+    
+    if (mimeType) {
+      if (this.FILE_MIME_TYPES.includes(mimeType)) {
+        return 'file';
+      }
+      if (mimeType.startsWith('image/') || mimeType.startsWith('video/') || mimeType.startsWith('audio/')) {
+        return 'media';
+      }
+      if (mimeType === 'text/css') {
+        return 'stylesheet';
+      }
+      if (mimeType === 'application/javascript' || mimeType === 'text/javascript') {
+        return 'script';
+      }
+      if (mimeType.startsWith('font/') || mimeType.includes('opentype') || mimeType.includes('woff')) {
+        return 'font';
+      }
+    } 
+    // Check URL for file extensions
+    if (this.FILE_EXTENSIONS.some(ext => details.url.toLowerCase().includes(ext))) {
+      return 'file';
+    }
+
+    return 'other';
+  }
+
+  
   static getInstance(): NetworkRequestManager {
     if (!NetworkRequestManager.instance) {
       NetworkRequestManager.instance = new NetworkRequestManager();
@@ -89,7 +152,7 @@ class NetworkRequestManager {
         void (async () => {
           try {
             const cookies = await browser.cookies.getAll({ url: details.url });
-            
+
             const request: RequestData = {
               id: crypto.randomUUID(),
               url: details.url,
@@ -100,7 +163,7 @@ class NetworkRequestManager {
               method: details.method || 'GET',
               direction: this.determineDirection(details),
             };
-        
+
             await this.storeRequest(request);
           } catch (error) {
             console.error('Error processing request:', error);
@@ -112,7 +175,7 @@ class NetworkRequestManager {
       ["requestBody"]
     );
 
-    // Listen for completed requests
+    // Listen for completed requests and update headers
     browser.webRequest.onHeadersReceived.addListener(
       (details: WebRequest.OnHeadersReceivedDetailsType) => {
         void (async () => {
@@ -133,9 +196,14 @@ class NetworkRequestManager {
               if (contentLengthHeader?.value) {
                 this.networkRequests[requestIndex].contentLength = parseInt(contentLengthHeader.value, 10);
               }
-              
+
               this.networkRequests[requestIndex].status = details.statusCode;
-              
+
+              // Add download type categorization
+              if (this.networkRequests[requestIndex].direction === 'download') {
+                this.networkRequests[requestIndex].downloadType = this.determineDownloadType(details);
+              }
+
               await this.saveRequests();
             }
           } catch (error) {
@@ -160,7 +228,7 @@ class NetworkRequestManager {
         return true;
       }
     );
-  }
+}
 }
 
 const manager = NetworkRequestManager.getInstance();
